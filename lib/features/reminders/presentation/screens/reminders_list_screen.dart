@@ -14,7 +14,6 @@ import 'dose_tracking_dashboard.dart';
 import '../../../../core/utils/oppo_settings_guide.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 
-
 class RemindersListScreen extends ConsumerWidget {
   const RemindersListScreen({super.key});
 
@@ -485,3 +484,4 @@ class _ReminderCard extends ConsumerWidget {
     );
   }
 }
+

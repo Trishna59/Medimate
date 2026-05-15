@@ -285,7 +285,6 @@ class ReminderController extends StateNotifier<ReminderState> {
   }
 }
 
-
 // Reminder controller provider
 final reminderControllerProvider = StateNotifierProvider<ReminderController, ReminderState>((ref) {
   final repository = ref.watch(reminderRepositoryProvider);
@@ -315,5 +314,3 @@ final alarmFiredProvider = StreamProvider<int>((ref) {
     return -1;
   }).where((id) => id != -1);
 });
-
-

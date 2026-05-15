@@ -15,6 +15,7 @@ import '../../../reminders/presentation/screens/test_notifications_screen.dart';
 import '../../../reminders/presentation/screens/reminders_list_screen.dart';
 import '../../../../core/utils/oppo_settings_guide.dart';
 import 'ocr_testing_screen.dart';
+import '../../../medicine/presentation/screens/medicine_admin_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -36,6 +37,21 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('MediMate'),
         actions: [
+          // Add this button in your AppBar actions (after the other IconButtons)
+IconButton(
+  icon: const Icon(Icons.admin_panel_settings),
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const MedicineAdminScreen(),
+      ),
+    );
+  },
+  tooltip: 'Medicine Database',
+),
+
+
 // In home_screen.dart AppBar actions:
 
 IconButton(

@@ -2,49 +2,49 @@
 // ============================================================
 // MEDICINE DETAIL SCREEN — with Auto Text-to-Speech
 //
-// FEATURES:
-//  • Auto-reads every info card aloud on screen open (no user action needed)
-//  • 3-second pause between each card while reading
-//  • Volume icon in app-bar shows live speaking state (animated pulse)
-//  • Tap volume icon → stop/restart reading
-//  • Reading stops automatically when user leaves the screen
+// ORIGINAL FEATURES:
+// • Auto-reads every info card aloud on screen open (no user action needed)
+// • 3-second pause between each card while reading
+// • Volume icon in app-bar shows live speaking state (animated pulse)
+// • Tap volume icon → stop/restart reading
+// • Reading stops automatically when user leaves the screen
+//
+// NEW FEATURE (added):
+// • "Add Reminder" FAB at the bottom centre of the screen
+// • Tapping it stops TTS and navigates to AddReminderScreen
+// • Medicine Name, Dosage, and Instructions fields are pre-filled
+//   automatically — user only needs to set the reminder time(s)
 // ============================================================
-
 // ignore_for_file: deprecated_member_use, curly_braces_in_flow_control_structures
-
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-
 import '../../domain/entities/medicine.dart';
+// ── NEW IMPORT: navigate to AddReminderScreen ────────────────
+import '../../../reminders/presentation/screens/add_reminder_screen.dart';
 
-// ─── TTS state enum ─────────────────────────────────────────
+// ─── TTS state enum ──────────────────────────────────────────
 enum _TtsState { playing, stopped }
 
 class MedicineDetailScreen extends StatefulWidget {
   final Medicine medicine;
   final String? scannedText;
-
   const MedicineDetailScreen({
     super.key,
     required this.medicine,
     this.scannedText,
   });
-
   @override
   State<MedicineDetailScreen> createState() => _MedicineDetailScreenState();
 }
 
 class _MedicineDetailScreenState extends State<MedicineDetailScreen>
     with SingleTickerProviderStateMixin {
-  // ── TTS engine ──────────────────────────────────────────────
+  // ── TTS engine ───────────────────────────────────────────────
   final FlutterTts _flutterTts = FlutterTts();
   _TtsState _ttsState = _TtsState.stopped;
-
   // Tracks whether the sequential reading loop is still running
   bool _readingActive = false;
-
   // ── Pulse animation for the volume icon ─────────────────────
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
@@ -53,7 +53,6 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
   List<_ReadSegment> get _readSegments {
     final m = widget.medicine;
     final segments = <_ReadSegment>[];
-
     // Introduction
     segments.add(_ReadSegment(
       cardTitle: null, // intro — no card header
@@ -61,43 +60,36 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
           'Medicine details for ${m.name}. Generic name: ${m.genericName}. '
           'Manufactured by ${m.manufacturer}.',
     ));
-
     if (m.description != null)
       segments.add(_ReadSegment(
         cardTitle: 'Description',
         text: m.description!,
       ));
-
     if (m.uses != null)
       segments.add(_ReadSegment(
         cardTitle: 'Uses and Indications',
         text: m.uses!,
       ));
-
     if (m.dosageInfo != null)
       segments.add(_ReadSegment(
         cardTitle: 'Dosage Instructions',
         text: m.dosageInfo!,
       ));
-
     if (m.sideEffects != null)
       segments.add(_ReadSegment(
         cardTitle: 'Side Effects',
         text: m.sideEffects!,
       ));
-
     if (m.precautions != null)
       segments.add(_ReadSegment(
         cardTitle: 'Precautions',
         text: m.precautions!,
       ));
-
     if (m.storageInstructions != null)
       segments.add(_ReadSegment(
         cardTitle: 'Storage Instructions',
         text: m.storageInstructions!,
       ));
-
     // Closing disclaimer
     segments.add(_ReadSegment(
       cardTitle: null,
@@ -105,7 +97,6 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
           'This information is for general reference only. '
           'Always consult a licensed pharmacist or doctor before taking any medicine.',
     ));
-
     return segments;
   }
 
@@ -115,8 +106,7 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
   @override
   void initState() {
     super.initState();
-
-    // ── Pulse animation setup ──────────────────────────────────
+    // ── Pulse animation setup ─────────────────────────────────
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -124,10 +114,8 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.25).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-
     // ── Configure TTS ─────────────────────────────────────────
     _configureTts();
-
     // ── Auto-start reading after first frame ──────────────────
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _startReading();
@@ -140,18 +128,15 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
     await _flutterTts.setVolume(1.0);
     await _flutterTts.setPitch(1.0);
     await _flutterTts.awaitSpeakCompletion(true); // makes speak() awaitable
-
     _flutterTts.setStartHandler(() {
       if (mounted) setState(() => _ttsState = _TtsState.playing);
     });
-
     _flutterTts.setCompletionHandler(() {
       if (mounted && !_readingActive) {
         setState(() => _ttsState = _TtsState.stopped);
         _pulseController.stop();
       }
     });
-
     _flutterTts.setErrorHandler((msg) {
       debugPrint('❌ TTS error: $msg');
       if (mounted) setState(() => _ttsState = _TtsState.stopped);
@@ -159,39 +144,30 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
     });
   }
 
-  // ── Sequential reader ────────────────────────────────────────
+  // ── Sequential reader ─────────────────────────────────────────
   Future<void> _startReading() async {
     if (_readingActive) return; // already running
     _readingActive = true;
-
     final segments = _readSegments;
-
     _pulseController.repeat(reverse: true);
     setState(() {
       _ttsState = _TtsState.playing;
       _activeSegmentIndex = 0;
     });
-
     for (int i = 0; i < segments.length; i++) {
       if (!_readingActive || !mounted) break;
-
       setState(() => _activeSegmentIndex = i);
-
       final label =
           segments[i].cardTitle != null ? '${segments[i].cardTitle}. ' : '';
       final utterance = '$label${segments[i].text}';
-
       // Speak — awaits until utterance finishes (awaitSpeakCompletion = true)
       await _flutterTts.speak(utterance);
-
       if (!_readingActive || !mounted) break;
-
       // 3-second pause between cards (skip after last segment)
       if (i < segments.length - 1) {
         await Future.delayed(const Duration(seconds: 3));
       }
     }
-
     // Reading loop ended naturally
     if (mounted) {
       setState(() {
@@ -217,7 +193,7 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
     }
   }
 
-  // ── Volume button handler ────────────────────────────────────
+  // ── Volume button handler ─────────────────────────────────────
   Future<void> _toggleTts() async {
     if (_ttsState == _TtsState.playing) {
       await _stopReading();
@@ -234,11 +210,61 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
     super.dispose();
   }
 
-  // ── UI ───────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  // ── NEW METHOD: Navigate to Add Reminder with pre-filled data ─
+  // ════════════════════════════════════════════════════════════
+  //
+  // Field mapping:
+  //   widget.medicine.name              → medicineName
+  //   strength + " " + dosageForm       → dosage (e.g. "250mg Tablet")
+  //   first sentence of dosageInfo      → instructions (optional)
+  //
+  void _navigateToAddReminder() {
+    // Stop TTS so it does not continue playing in the background
+    if (_ttsState == _TtsState.playing) _stopReading();
+
+    final m = widget.medicine;
+
+    // Build dosage string e.g. "250mg Tablet"
+    final dosageParts = <String>[
+      if (m.strength != null && m.strength!.trim().isNotEmpty)
+        m.strength!.trim(),
+      if (m.dosageForm != null && m.dosageForm!.trim().isNotEmpty)
+        m.dosageForm!.trim(),
+    ];
+    final dosageString = dosageParts.join(' ');
+
+    // Build instructions hint from the first sentence of dosageInfo
+    // (capped at 120 chars so it fits neatly in the field)
+    String? instructionsHint;
+    if (m.dosageInfo != null && m.dosageInfo!.trim().isNotEmpty) {
+      final info = m.dosageInfo!.trim();
+      final dotIdx = info.indexOf('.');
+      if (dotIdx != -1 && dotIdx < 120) {
+        instructionsHint = info.substring(0, dotIdx + 1);
+      } else if (info.length <= 120) {
+        instructionsHint = info;
+      } else {
+        instructionsHint = '${info.substring(0, 120).trimRight()}…';
+      }
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AddReminderScreen(
+          medicineName: m.name,
+          dosage: dosageString.isEmpty ? null : dosageString,
+          instructions: instructionsHint, // NEW param — see add_reminder_screen.dart
+        ),
+      ),
+    );
+  }
+  // ════════════════════════════════════════════════════════════
+
+  // ── UI ─────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final medicine = widget.medicine;
-
     return Scaffold(
       backgroundColor: Colors.grey[50],
       body: CustomScrollView(
@@ -349,7 +375,6 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
                         _chip(Icons.star, 'Common', Colors.amber),
                     ],
                   ),
-
                   const SizedBox(height: 16),
 
                   // ── Generic Name ─────────────────────────────
@@ -398,7 +423,7 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
                   if (medicine.sideEffects != null)
                     _infoCard(
                       segmentIndex: _segmentIndexFor('Side Effects'),
-                      title: '⚠️ Side Effects',
+                      title: '⚠️Side Effects',
                       content: medicine.sideEffects!,
                       bgColor: Colors.orange[50]!,
                     ),
@@ -416,7 +441,7 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
                   if (medicine.storageInstructions != null)
                     _infoCard(
                       segmentIndex: _segmentIndexFor('Storage Instructions'),
-                      title: '🌡️ Storage Instructions',
+                      title: '🌡️Storage Instructions',
                       content: medicine.storageInstructions!,
                       bgColor: Colors.cyan[50]!,
                     ),
@@ -432,20 +457,43 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
                       border: Border.all(color: Colors.yellow[700]!),
                     ),
                     child: const Text(
-                      '🧪 This information is for general reference only. '
+                      '\n\nThis information is for general reference only. '
                       'Always consult a licensed pharmacist or doctor before '
                       'taking any medicine.',
                       style: TextStyle(fontSize: 12, color: Colors.black87),
                     ),
                   ),
 
-                  const SizedBox(height: 32),
+                  // ── Bottom padding so the FAB never covers content ──────
+                  // ── (NEW — added because we placed a FAB at centerFloat) ─
+                  const SizedBox(height: 90),
                 ],
               ),
             ),
           ),
         ],
       ),
+
+      // ════════════════════════════════════════════════════════
+      // ── NEW: "Add Reminder" Floating Action Button ────────
+      //
+      // • Green pill-shaped button pinned at the bottom centre
+      // • Icon: alarm_add_rounded (bell with plus sign)
+      // • Calls _navigateToAddReminder() which pushes
+      //   AddReminderScreen with all 3 fields pre-populated
+      // ════════════════════════════════════════════════════════
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _navigateToAddReminder,
+        backgroundColor: Colors.green[700],
+        foregroundColor: Colors.white,
+        elevation: 4,
+        icon: const Icon(Icons.alarm_add_rounded),
+        label: const Text(
+          'Add Reminder',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
@@ -467,7 +515,6 @@ class _MedicineDetailScreenState extends State<MedicineDetailScreen>
   }) {
     final isActive =
         segmentIndex != -1 && _activeSegmentIndex == segmentIndex;
-
     return AnimatedContainer(
       duration: const Duration(milliseconds: 350),
       margin: const EdgeInsets.only(bottom: 12),
@@ -555,7 +602,6 @@ class _ReadSegment {
 class _NowReadingBanner extends StatelessWidget {
   final String segmentTitle;
   const _NowReadingBanner({required this.segmentTitle});
-
   @override
   Widget build(BuildContext context) {
     return Container(

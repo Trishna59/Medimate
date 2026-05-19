@@ -1,18 +1,25 @@
 // ============================================
 // FILE: lib/features/reminders/presentation/screens/add_reminder_screen.dart
 // FIXED: Update uses Reminder.copyWith() - proper type handling
+//
+// UPDATED: Added optional `instructions` constructor parameter.
+//          When navigating from MedicineDetailScreen the Instructions
+//          field is now pre-filled automatically alongside medicineName
+//          and dosage that already existed.
 // ============================================
-
 // ignore_for_file: avoid_print
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/reminder.dart';
 import '../providers/reminder_provider.dart';
+import 'reminders_list_screen.dart';
 
 class AddReminderScreen extends ConsumerStatefulWidget {
   final String? medicineName;
   final String? dosage;
+  // ── NEW: pre-fills the Instructions field when navigating from ──────────
+  // ── MedicineDetailScreen (derived from medicine.dosageInfo).   ──────────
+  final String? instructions;
   final String? scanId;
   final Reminder? existingReminder; // Domain entity for edit mode
 
@@ -20,12 +27,14 @@ class AddReminderScreen extends ConsumerStatefulWidget {
     super.key,
     this.medicineName,
     this.dosage,
+    this.instructions, // ← NEW optional param
     this.scanId,
     this.existingReminder,
   });
 
   @override
-  ConsumerState<AddReminderScreen> createState() => _AddReminderScreenState();
+  ConsumerState<AddReminderScreen> createState() =>
+      _AddReminderScreenState();
 }
 
 class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
@@ -33,18 +42,16 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
   final _medicineController = TextEditingController();
   final _dosageController = TextEditingController();
   final _instructionsController = TextEditingController();
-  
   ReminderFrequency _frequency = ReminderFrequency.daily;
   List<TimeOfDay> _selectedTimes = [];
   List<int> _selectedWeekdays = [];
-  
+
   bool get _isEditMode => widget.existingReminder != null;
 
   @override
   void initState() {
     super.initState();
-    
-    // Load existing reminder data if editing
+    // ── EDIT MODE: restore all existing reminder data ─────────
     if (_isEditMode) {
       final reminder = widget.existingReminder!;
       _medicineController.text = reminder.medicineName;
@@ -52,7 +59,6 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
       _instructionsController.text = reminder.instructions ?? '';
       _frequency = reminder.frequency;
       _selectedWeekdays = reminder.weekdays ?? [];
-      
       // Convert time strings to TimeOfDay
       _selectedTimes = reminder.reminderTimes.map((timeStr) {
         final parts = timeStr.split(':');
@@ -61,15 +67,23 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
           minute: int.parse(parts[1]),
         );
       }).toList();
-      
       print('📝 Edit mode: Loaded reminder ${reminder.medicineName}');
+      return; // exit — don't apply create-mode pre-fills in edit mode
     }
-    // Pre-fill if coming from scan
-    else if (widget.medicineName != null) {
+
+    // ── CREATE MODE: pre-fill from constructor params ─────────
+    // Params are set by MedicineDetailScreen or the OCR scan flow.
+    if (widget.medicineName != null) {
       _medicineController.text = widget.medicineName!;
     }
     if (widget.dosage != null) {
       _dosageController.text = widget.dosage!;
+    }
+    // ── NEW: pre-fill instructions ────────────────────────────
+    // Populated when coming from MedicineDetailScreen.
+    // The user can edit or clear this before saving.
+    if (widget.instructions != null) {
+      _instructionsController.text = widget.instructions!;
     }
   }
 
@@ -86,7 +100,6 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
       context: context,
       initialTime: TimeOfDay.now(),
     );
-    
     if (time != null) {
       setState(() {
         _selectedTimes.add(time);
@@ -101,86 +114,104 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
   }
 
   Future<void> _saveReminder() async {
-    if (!_formKey.currentState!.validate()) return;
-    
-    if (_selectedTimes.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please add at least one reminder time'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
+  if (!_formKey.currentState!.validate()) return;
+  if (_selectedTimes.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Please add at least one reminder time'),
+        backgroundColor: Colors.orange,
+      ),
+    );
+    return;
+  }
 
-    // Convert TimeOfDay to String format
-    final timeStrings = _selectedTimes
-        .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
-        .toList();
+  // Convert TimeOfDay to String format
+  final timeStrings = _selectedTimes
+      .map((t) =>
+          '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+      .toList();
 
-    bool success;
-    
-    if (_isEditMode) {
-      // UPDATE existing reminder using copyWith()
-      // This maintains the Reminder type (domain entity)
-      print('📝 Updating reminder: ${widget.existingReminder!.id}');
-      
-      final updatedReminder = widget.existingReminder!.copyWith(
-        medicineName: _medicineController.text.trim(),
-        dosage: _dosageController.text.trim(),
-        instructions: _instructionsController.text.trim().isEmpty 
-            ? null 
-            : _instructionsController.text.trim(),
-        reminderTimes: timeStrings,
-        frequency: _frequency,
-        weekdays: _frequency == ReminderFrequency.weekly ? _selectedWeekdays : null,
-      );
-      
-      // Pass Reminder entity - provider/repository handles conversion
-      success = await ref.read(reminderControllerProvider.notifier)
-          .updateReminder(updatedReminder);
-      
-      if (success && mounted) {
-        // Invalidate providers to refresh UI
-        ref.invalidate(userRemindersProvider);
-        ref.invalidate(reminderDoseLogsProvider(widget.existingReminder!.id));
-        ref.invalidate(adherenceRateProvider);
-        
-        print('✅ Providers invalidated after update');
-      }
-      
-    } else {
-      // CREATE new reminder
-      print('📝 Creating new reminder');
-      
-      success = await ref.read(reminderControllerProvider.notifier)
-          .createReminder(
-            medicineName: _medicineController.text.trim(),
-            dosage: _dosageController.text.trim(),
-            instructions: _instructionsController.text.trim().isEmpty 
-                ? null 
-                : _instructionsController.text.trim(),
-            reminderTimes: timeStrings,
-            frequency: _frequency,
-            weekdays: _frequency == ReminderFrequency.weekly ? _selectedWeekdays : null,
-            scanId: widget.scanId,
-          );
-      
-      if (success && mounted) {
-        ref.invalidate(userRemindersProvider);
-        print('✅ Providers invalidated after create');
-      }
-    }
+  bool success;
+
+  if (_isEditMode) {
+    // UPDATE existing reminder using copyWith()
+    print('📝 Updating reminder: ${widget.existingReminder!.id}');
+    final updatedReminder = widget.existingReminder!.copyWith(
+      medicineName: _medicineController.text.trim(),
+      dosage: _dosageController.text.trim(),
+      instructions: _instructionsController.text.trim().isEmpty
+          ? null
+          : _instructionsController.text.trim(),
+      reminderTimes: timeStrings,
+      frequency: _frequency,
+      weekdays: _frequency == ReminderFrequency.weekly
+          ? _selectedWeekdays
+          : null,
+    );
+
+    success = await ref
+        .read(reminderControllerProvider.notifier)
+        .updateReminder(updatedReminder);
 
     if (success && mounted) {
-      Navigator.pop(context, true); // Return true to indicate success
+      ref.invalidate(userRemindersProvider);
+      ref.invalidate(reminderDoseLogsProvider(widget.existingReminder!.id));
+      ref.invalidate(adherenceRateProvider);
+      print('✅ Providers invalidated after update');
+    }
+  } else {
+    // CREATE new reminder
+    print('📝 Creating new reminder');
+    success = await ref
+        .read(reminderControllerProvider.notifier)
+        .createReminder(
+          medicineName: _medicineController.text.trim(),
+          dosage: _dosageController.text.trim(),
+          instructions: _instructionsController.text.trim().isEmpty
+              ? null
+              : _instructionsController.text.trim(),
+          reminderTimes: timeStrings,
+          frequency: _frequency,
+          weekdays: _frequency == ReminderFrequency.weekly
+              ? _selectedWeekdays
+              : null,
+          scanId: widget.scanId,
+        );
+
+    if (success && mounted) {
+      ref.invalidate(userRemindersProvider);
+      print('✅ Providers invalidated after create');
     }
   }
+
+  // ─── NAVIGATION AFTER SAVE ──────────────────────────────────────────────
+  if (success && mounted) {
+    if (_isEditMode) {
+      // EDIT MODE: came from ReminderDetailScreen, just pop back to it.
+      // The detail screen will show the updated data.
+      Navigator.pop(context, true);
+    } else {
+      // CREATE MODE (navigated from MedicineDetailScreen):
+      // Pop AddReminderScreen AND MedicineDetailScreen off the stack,
+      // then push RemindersListScreen so the user lands there directly.
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const RemindersListScreen(),
+        ),
+        // Keep everything below MedicineDetailScreen (e.g. HomeScreen)
+        // by stopping at the first route that existed before the detail page.
+        // Adjust the route name below if you use named routes.
+        (route) => route.isFirst,
+      );
+    }
+  }
+  // ────────────────────────────────────────────────────────────────────────
+}
 
   @override
   Widget build(BuildContext context) {
     final reminderState = ref.watch(reminderControllerProvider);
-    
     // Listen for messages
     ref.listen(reminderControllerProvider, (previous, next) {
       if (next.error != null) {
@@ -192,7 +223,6 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
         );
         ref.read(reminderControllerProvider.notifier).clearMessages();
       }
-      
       if (next.successMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -202,7 +232,6 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
         );
       }
     });
-
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditMode ? 'Edit Reminder' : 'Add Reminder'),
@@ -214,7 +243,8 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Medicine Name
+              // ── Medicine Name ─────────────────────────────────
+              // Pre-filled from MedicineDetailScreen via widget.medicineName
               TextFormField(
                 controller: _medicineController,
                 textCapitalization: TextCapitalization.words,
@@ -230,10 +260,10 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
-              // Dosage
+
+              // ── Dosage ────────────────────────────────────────
+              // Pre-filled from strength + dosageForm via widget.dosage
               TextFormField(
                 controller: _dosageController,
                 decoration: const InputDecoration(
@@ -248,10 +278,10 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
-              // Instructions (Optional)
+
+              // ── Instructions (Optional) ───────────────────────
+              // Pre-filled from medicine.dosageInfo via widget.instructions (NEW)
               TextFormField(
                 controller: _instructionsController,
                 maxLines: 2,
@@ -262,16 +292,14 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
                   prefixIcon: Icon(Icons.info_outline),
                 ),
               ),
-              
               const SizedBox(height: 24),
-              
-              // Frequency Selector
+
+              // ── Frequency Selector ────────────────────────────
               Text(
                 'Reminder Frequency',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 12),
-              
               SegmentedButton<ReminderFrequency>(
                 segments: const [
                   ButtonSegment(
@@ -292,8 +320,8 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
                   });
                 },
               ),
-              
-              // Weekly Days Selector
+
+              // ── Weekly Days Selector ──────────────────────────
               if (_frequency == ReminderFrequency.weekly) ...[
                 const SizedBox(height: 16),
                 Wrap(
@@ -316,10 +344,10 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
                   ],
                 ),
               ],
-              
+
               const SizedBox(height: 24),
-              
-              // Reminder Times Section
+
+              // ── Reminder Times Section ────────────────────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -334,10 +362,9 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
                   ),
                 ],
               ),
-              
               const SizedBox(height: 12),
-              
-              // Times List
+
+              // ── Times List ────────────────────────────────────
               if (_selectedTimes.isEmpty)
                 Container(
                   padding: const EdgeInsets.all(20),
@@ -368,12 +395,12 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
                   children: _selectedTimes.asMap().entries.map((entry) {
                     final index = entry.key;
                     final time = entry.value;
-                    
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          backgroundColor:
+                              Theme.of(context).colorScheme.primary,
                           child: Icon(
                             Icons.alarm,
                             color: Theme.of(context).colorScheme.onPrimary,
@@ -398,10 +425,10 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
                     );
                   }).toList(),
                 ),
-              
+
               const SizedBox(height: 32),
-              
-              // Save Button
+
+              // ── Save Button ───────────────────────────────────
               ElevatedButton.icon(
                 onPressed: reminderState.isSaving ? null : _saveReminder,
                 icon: reminderState.isSaving
@@ -410,14 +437,17 @@ class _AddReminderScreenState extends ConsumerState<AddReminderScreen> {
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
                     : Icon(_isEditMode ? Icons.check : Icons.add),
                 label: Text(
-                  reminderState.isSaving 
-                      ? 'Saving...' 
-                      : _isEditMode ? 'Update Reminder' : 'Save Reminder'
+                  reminderState.isSaving
+                      ? 'Saving...'
+                      : _isEditMode
+                          ? 'Update Reminder'
+                          : 'Save Reminder',
                 ),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
